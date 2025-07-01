@@ -1,71 +1,67 @@
-const { Builder, By, Key } = require('selenium-webdriver');
-const assert = require('assert');
-describe('Otomatisasi Pengujian Aplikasi Web Sauce Demo', function() {
-    this.timeout(40000); 
-    let driver;
+import { Builder, By } from 'selenium-webdriver'; 
+import assert from 'assert'; 
+import fs from 'fs'; 
+import path from 'path'; 
+import pixelmatch from 'pixelmatch'; 
+import { PNG } from 'pngjs'; 
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// Definisikan path untuk menyimpan screenshot
+const screenshotDir = path.resolve(__dirname, '../screenshots');
+const baselinePath = path.join(screenshotDir, 'login_baseline.png');
+const currentPath = path.join(screenshotDir, 'login_current.png');
+const diffPath = path.join(screenshotDir, 'login_diff.png');
+
+// Import Page Objects yang sudah di buat sebelumnya
+import LoginPage from '../pages/LoginPage.js'; 
+import ProductsPage from '../pages/ProductsPage.js'; 
+describe('Otomatisasi Pengujian Aplikasi Web Sauce Demo (Gaya Lebih Santai)', function() {
+    this.timeout(40000); // 40 detik untuk setiap test.
+
+    let driver; 
     beforeEach(async function() {
-        driver = await new Builder().forBrowser('chrome').build();
+        driver = await new Builder().forBrowser('chrome').build(); 
         await driver.manage().window().maximize(); 
         await driver.get('https://www.saucedemo.com/'); 
     });
+
+
     afterEach(async function() {
         await driver.quit(); 
     });
 
     // --- Skenario Test Login ---
 
-    // Ini adalah test case untuk skenario login yang sukses.
-    it('Memastikan login berhasil dengan kredensial yang valid', async function() {
-        // Temukan field username berdasarkan ID-nya, lalu ketik 'standard_user'.
-        await driver.findElement(By.id('user-name')).sendKeys('standard_user');
-        // Temukan field password, lalu ketik 'secret_sauce'.
-        await driver.findElement(By.id('password')).sendKeys('secret_sauce');
-        // Temukan tombol login, lalu klik.
-        await driver.findElement(By.id('login-button')).click();
-
-        
-        // cek teks 'Products' di header halaman.
-        const headerProduk = await driver.findElement(By.className('title')).getText();
-        // Gunakan assertion untuk membandingkan teks yang di dapat dengan yang seharusnya.
-        assert.strictEqual(headerProduk, 'Products', 'Verifikasi: Teks "Products" harus muncul di halaman setelah login berhasil.');
+    // Test case untuk memastikan login berhasil dengan data yang benar.
+    it('Memastikan login berhasil dengan kredensial yang valid', async function() { 
+        await LoginPage.login(driver, 'standard_user', 'secret_sauce');
+        const headerProduk = await ProductsPage.getPageTitle(driver);
+        assert.strictEqual(headerProduk, 'Products', 'Verifikasi: Judul halaman harus "Products" setelah login sukses.');
     });
 
-    // Ini adalah test case untuk skenario login gagal karena username kosong.
-    it('Validasi pesan error saat username dikosongkan', async function() {
-        // mengisi password, sengaja mengosongkan username.
-        await driver.findElement(By.id('password')).sendKeys('secret_sauce');
-        // Klik tombol login.
-        await driver.findElement(By.id('login-button')).click();
-        const pesanError = await driver.findElement(By.css('[data-test="error"]')).getText();
+    // Test case untuk memastikan muncul pesan error kalau username dikosongkan.
+    it('Validasi pesan error saat username dikosongkan', async function() { 
+        await LoginPage.login(driver, '', 'secret_sauce');
+        const pesanError = await LoginPage.getErrorMessage(driver);
         assert.strictEqual(pesanError, 'Epic sadface: Username is required', 'Verifikasi: Pesan error "Username is required" seharusnya muncul.');
     });
 
     // --- Skenario Test Pengurutan Produk Z-A ---
 
-    it('Memverifikasi produk terurut dari Z ke A', async function() {
-        // Untuk bisa mengurutkan produk, harus login dulu ke halaman produk.
-        await driver.findElement(By.id('user-name')).sendKeys('standard_user');
-        await driver.findElement(By.id('password')).sendKeys('secret_sauce');
-        await driver.findElement(By.id('login-button')).click();
+    // Test case untuk mengecek apakah produk bisa diurutkan dari Z ke A.
+    it('Memverifikasi produk terurut dari Z ke A', async function() { 
+        await LoginPage.login(driver, 'standard_user', 'secret_sauce');
 
-        // Setelah login, verifikasi lagi bahwa memang sudah di halaman 'Products'.
-        const headerProduk = await driver.findElement(By.className('title')).getText();
-        assert.strictEqual(headerProduk, 'Products', 'Verifikasi: Harus berada di halaman Products setelah login.');
+        const headerProduk = await ProductsPage.getPageTitle(driver);
+        assert.strictEqual(headerProduk, 'Products', 'Verifikasi: Kita harusnya sudah di halaman Products setelah login.');
 
-        // Temukan elemen dropdown untuk pengurutan produk.
-        const dropdownPengurutan = await driver.findElement(By.className('product_sort_container'));
+        await ProductsPage.sortProducts(driver, 'za'); // 'za' itu kodenya untuk Z ke A.
 
-        // Pilih opsi "Name (Z to A)" dari dropdown. cari berdasarkan atribut 'value="za"'.
-        await dropdownPengurutan.findElement(By.css('option[value="za"]')).click();
+        const namaProdukAktual = await ProductsPage.getItemNames(driver);
 
-        // --- Verifikasi Urutan Produk ---
-        // Sekarang, ambil semua nama produk yang ditampilkan di halaman.
-        const elemenNamaProduk = await driver.findElements(By.className('inventory_item_name'));
-        let namaProdukAktual = [];
-        for (let elemen of elemenNamaProduk) {
-            namaProdukAktual.push(await elemen.getText());
-        }
+        // Ini daftar nama produk yang kita harapkan setelah diurutkan Z-A.
         const namaProdukYangDiharapkan = [
             "Test.allTheThings() T-Shirt (Red)",
             "Sauce Labs Fleece Jacket",
@@ -73,8 +69,47 @@ describe('Otomatisasi Pengujian Aplikasi Web Sauce Demo', function() {
             "Sauce Labs Backpack",
             "Sauce Labs Bike Light",
             "Sauce Labs Onesie"
-        ].sort((a, b) => b.localeCompare(a)); // Ini adalah cara JavaScript mengurutkan array dari Z-A.
+        ].sort((a, b) => b.localeCompare(a)); 
 
-        assert.deepStrictEqual(namaProdukAktual, namaProdukYangDiharapkan, 'Verifikasi: Produk seharusnya sudah terurut dari Z ke A.');
+        assert.deepStrictEqual(namaProdukAktual, namaProdukYangDiharapkan, 'Verifikasi: Produk harusnya sudah terurut dari Z ke A dengan benar.');
+    });
+
+    // --- Skenario Test Visual ---
+
+    it('Memverifikasi tampilan halaman login secara visual', async function() {
+        const currentScreenshot = await driver.takeScreenshot();
+        fs.writeFileSync(currentPath, currentScreenshot, 'base64');
+
+        if (!fs.existsSync(baselinePath)) {
+            console.log('Baseline image tidak ditemukan. Membuat baseline baru.');
+            fs.writeFileSync(baselinePath, currentScreenshot, 'base64');
+            return; 
+        }
+
+        // Baca baseline dan current image
+        const img1 = PNG.sync.read(fs.readFileSync(baselinePath));
+        const img2 = PNG.sync.read(fs.readFileSync(currentPath));
+
+        // Pastikan ukuran gambar sama
+        assert.strictEqual(img1.width, img2.width, 'Lebar gambar baseline dan current harus sama.');
+        assert.strictEqual(img1.height, img2.height, 'Tinggi gambar baseline dan current harus sama.');
+
+        // Buat objek diff image
+        const diff = new PNG({ width: img1.width, height: img1.height });
+
+        // Bandingkan gambar dan hitung perbedaan piksel
+        const numDiffPixels = pixelmatch(
+            img1.data, img2.data, diff.data, img1.width, img1.height,
+            { threshold: 0.1 } // Ambang batas toleransi perbedaan piksel (0.1 = 10% toleransi)
+        );
+
+        // Jika ada perbedaan, simpan gambar diff
+        if (numDiffPixels > 0) {
+            fs.writeFileSync(diffPath, PNG.sync.write(diff));
+            console.log(`Ditemukan ${numDiffPixels} perbedaan piksel. Lihat ${diffPath}`);
+        }
+
+        // Assert bahwa tidak ada perbedaan piksel yang signifikan
+        assert.strictEqual(numDiffPixels, 0, `Verifikasi Visual: Ditemukan ${numDiffPixels} perbedaan piksel pada halaman login.`);
     });
 });
